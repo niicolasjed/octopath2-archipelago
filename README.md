@@ -15,7 +15,7 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 
 - Octopath Traveler 2 (PC / Steam)
 - [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) installed in the game folder
-- [Archipelago](https://archipelago.gg) 0.6.8+
+- [Archipelago](https://archipelago.gg) — developed against the `main` branch (post-0.6.7 release)
 
 ## Installation
 
@@ -41,7 +41,7 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 
 ## Important notes
 
-- **Always start a fresh save for a new Archipelago run.** The mod detects a new seed automatically and resets its local tracking files, but the in-game save itself should also be new to keep story progression consistent with what the multiworld expects.
+- **Always start a fresh save for a new Archipelago run.** Before starting a new multiworld, manually clear the mod's tracking files in `Mods\OT2AP\ap\` (delete `ap_given.txt`, `ap_checks.txt`, `ap_items.txt`, `ap_quests_sent.txt`, and `ap_start_char.txt` if present) to avoid carrying over progress from a previous run, and start a genuinely new in-game save as well.
 - **Some areas become temporarily locked by the base game's story** (this is normal Octopath Traveler 2 behavior, not a mod bug). For example, Osvald's prologue prison is inaccessible again until you finish his full storyline. Grab every chest you can see before leaving a story-locked area.
 - **Character safety mechanism**: if you're given a different starting character (or recruit one through the multiworld) than the one you picked at the title screen, the mod will **not** swap characters mid-scene — it waits until that character's own prologue is properly finished before making the switch, to avoid softlocking any story sequence.
 - The mod writes a few small tracking files to `Mods\OT2AP\ap\` — you never need to touch these manually.
