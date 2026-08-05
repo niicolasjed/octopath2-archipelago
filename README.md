@@ -36,8 +36,8 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 1. In the **Options Creator**, select **Octopath Traveler 2** and configure your options (starting character, whether to include equipment/treasures/materials/side quests, character randomization, etc.)
 2. Generate your YAML and put it in Archipelago's `Players` folder, then generate the multiworld as usual
 3. Host the server with your generated file
-4. Run the included Python client (`Octopath2Client.py`) and `/connect` to your server
-5. Launch Octopath Traveler 2 and start a **new game** — this is important, see note below
+4. In the Archipelago Launcher, search for "Octopath 2 Client" and click **Open** — no separate script needed, the client is bundled inside the APWorld
+5. `/connect` to your server, then launch Octopath Traveler 2 and start a **new game**
 
 ## Important notes
 
