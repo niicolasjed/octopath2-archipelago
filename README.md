@@ -50,3 +50,7 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 
 - The victory condition (finishing the epilogue) has been tested for false positives but not yet confirmed by an actual full playthrough — feedback on this is very welcome.
 - Quest items and story-critical items are intentionally **not** shuffled to avoid softlocks; only chests, side quests, equipment/consumables/treasures/materials, gold, and characters are part of the pool.
+
+## Troubleshooting
+
+- **Game crashes on startup with the mod enabled**: this has happened intermittently for at least one user and was resolved (in their case) after enabling the UE4SS GUI console (`GuiConsoleEnabled = 1` / `GuiConsoleVisible = 1` in `UE4SS-settings.ini`, under `[Debug]`). However, this doesn't reproduce consistently, so it may not be the actual root cause — if you hit this crash, try that setting, but please also report it on the Discord thread with your `UE4SS.log` and a screenshot of the debug panel at the moment of the crash so we can investigate further.
