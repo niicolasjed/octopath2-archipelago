@@ -37,6 +37,7 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 2. Generate your YAML and put it in Archipelago's `Players` folder, then generate the multiworld as usual
 3. Host the server with your generated file
 4. In the Archipelago Launcher, search for "Octopath 2 Client" and click **Open** — no separate script needed, the client is bundled inside the APWorld
+   - **First time only**: a window will pop up asking you to select your game's `Win64` folder (e.g. `...\Octopath_Traveler2\Octopath_Traveler2\Binaries\Win64`). This is saved automatically so you won't be asked again.
 5. `/connect` to your server, then launch Octopath Traveler 2 and start a **new game**
 
 ## Important notes
