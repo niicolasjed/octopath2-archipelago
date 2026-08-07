@@ -111,8 +111,13 @@ class Octopath2Context(CommonContext):
         await self.send_connect()
 
     def on_package(self, cmd: str, args: dict):
+        super().on_package(cmd, args)
+
+        if cmd == "RoomInfo":
+            self.ot2_seed_name = args.get("seed_name", "")
+
         if cmd == "Connected":
-            current_seed = args.get("seed_name", "")
+            current_seed = getattr(self, "ot2_seed_name", "") or ""
             seed_file = os.path.join(GAME_DIR, "ap_seed.txt")
             last_seed = None
             try:
@@ -121,7 +126,7 @@ class Octopath2Context(CommonContext):
             except Exception:
                 pass
 
-            if current_seed != last_seed:
+            if current_seed and current_seed != last_seed:
                 logger.info(f"[OT2] New game detected (different seed) -> resetting tracking files")
                 for fname in ["ap_checks.txt", "ap_items.txt", "ap_given.txt", "ap_quests_sent.txt"]:
                     try:
