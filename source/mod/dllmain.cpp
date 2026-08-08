@@ -19,6 +19,7 @@
 #include <string>
 #include "chest_table.hpp"
 #include <map>
+#include "subquest_table.hpp"
 
 using namespace RC;
 using namespace RC::Unreal;
@@ -36,6 +37,17 @@ public:
     bool m_pending_recruit_check = false;    // un recrutement externe vient d'etre detecte
     bool m_victory_sent = false;             // check de victoire deja envoye
     int m_natural_start_char = 0;            // perso choisi naturellement par le joueur au depart
+    bool m_test_chestloot = false;
+    bool m_pending_loot_removal = false;
+    std::wstring m_pending_loot_label;
+    int32 m_pending_loot_num = 0;
+    std::map<int, int> m_backpack_before_open;
+    bool m_pending_backpack_check = false;
+    int m_backpack_check_delay = 0;
+    bool m_our_item_call = false;
+    bool m_additem_hook_installed = false;
+    bool m_chest_loot_suppress = false;
+    std::set<int> m_quests_checked;
 
     std::map<int, std::pair<std::wstring, std::wstring>> m_item_defs; // ap_id -> (type, valeur)
     std::set<int> m_unlocked_chars;          // persos legitimement debloques (depart + items recus)
@@ -63,15 +75,17 @@ public:
     // ---- Donner objet / or ----
     auto give_player_item(const wchar_t* item_label, int32 num) -> void
     {
+        m_our_item_call = true;
         UObject* mgr = UObjectGlobals::FindFirstOf(STR("KSSaveDataManagerBP_C"));
-        if (!mgr) return;
+        if (!mgr) { m_our_item_call = false; return; }
         UFunction* fn = UObjectGlobals::StaticFindObject<UFunction*>(
             nullptr, nullptr, STR("/Script/Majesty.KSSaveDataManager:AddItemToBackpack"));
-        if (!fn) return;
+        if (!fn) { m_our_item_call = false; return; }
         struct { FName ItemLabel; int32 Num; } params{};
         params.ItemLabel = FName(item_label, FNAME_Add);
         params.Num = num;
         mgr->ProcessEvent(fn, &params);
+        m_our_item_call = false;
     }
 
     auto give_player_money(int32 amount) -> void
@@ -216,10 +230,27 @@ public:
 
         UObjectGlobals::RegisterHook(
             open_fn,
-            [](UnrealScriptFunctionCallableContext& context, void* custom_data) {},
+            [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
+                auto* self = static_cast<OT2APMod*>(custom_data);
+                UObject* chest = context.Context;
+                if (!chest) return;
+                UFunction* fn = chest->GetFunctionByNameInChain(STR("PickItem"));
+                if (!fn) return;
+                struct { FName ItemLabel; int32 ItemCount; uint8 pad[256]; } params{};
+                chest->ProcessEvent(fn, &params);
+                self->m_pending_loot_label = params.ItemLabel.ToString();
+                self->m_pending_loot_num = params.ItemCount;
+                if (self->m_pending_loot_label != L"None" && self->m_pending_loot_num > 0)
+                {
+                    self->m_pending_loot_removal = true;
+                    Output::send<LogLevel::Verbose>(STR("[OT2AP] Butin previsionnel : {} x{}\n"),
+                        self->m_pending_loot_label, self->m_pending_loot_num);
+                }
+            },
             [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
                 UObject* chest = context.Context;
                 if (!chest) return;
+                auto* self = static_cast<OT2APMod*>(custom_data);
                 auto* label_prop = chest->GetPropertyByNameInChain(STR("m_PlacementLabel"));
                 if (!label_prop) return;
                 FName label = *label_prop->ContainerPtrToValuePtr<FName>(chest);
@@ -236,7 +267,7 @@ public:
                     Output::send<LogLevel::Verbose>(STR("[OT2AP] Coffre non mappe : {}\n"), label.ToString());
                 }
             },
-            nullptr);
+            this);
         m_hook_installed = true;
         Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement !\n"));
     }
@@ -400,7 +431,23 @@ public:
 
         UObjectGlobals::RegisterHook(
             fn,
-            [](UnrealScriptFunctionCallableContext& context, void* custom_data) {},
+            [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
+                auto* self = static_cast<OT2APMod*>(custom_data);
+                UObject* chest = context.Context;
+                if (!chest) return;
+                UFunction* fn = chest->GetFunctionByNameInChain(STR("PickItem"));
+                if (!fn) return;
+                struct { FName ItemLabel; int32 ItemCount; uint8 pad[256]; } params{};
+                chest->ProcessEvent(fn, &params);
+                self->m_pending_loot_label = params.ItemLabel.ToString();
+                self->m_pending_loot_num = params.ItemCount;
+                if (self->m_pending_loot_label != L"None" && self->m_pending_loot_num > 0)
+                {
+                    self->m_pending_loot_removal = true;
+                    Output::send<LogLevel::Verbose>(STR("[OT2AP] Butin previsionnel : {} x{}\n"),
+                        self->m_pending_loot_label, self->m_pending_loot_num);
+                }
+            },
             [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
                 auto* self = static_cast<OT2APMod*>(custom_data);
                 if (self->m_our_join_call) return;
@@ -431,6 +478,69 @@ public:
         return false;
     }
 
+    auto remove_item(const std::wstring& item_label, int32 num) -> void
+    {
+        UObject* mgr = UObjectGlobals::FindFirstOf(STR("KSSaveDataManagerBP_C"));
+        if (!mgr) return;
+        UFunction* fn = mgr->GetFunctionByNameInChain(STR("SubItemFromBackpack"));
+        if (!fn) return;
+        struct { FName ItemLabel; int32 Num; bool ReturnValue; } params{};
+        params.ItemLabel = FName(item_label, FNAME_Add);
+        params.Num = num;
+        mgr->ProcessEvent(fn, &params);
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Objet retire : {} x{} -> success={}\n"), item_label, num, params.ReturnValue);
+    }
+
+    auto get_mission_state(int area, int position) -> int
+    {
+        UObject* save = UObjectGlobals::FindFirstOf(STR("KSSaveGameBP_C"));
+        if (!save) return -1;
+        auto* prop = save->GetPropertyByNameInChain(STR("SubMissionData"));
+        if (!prop) return -1;
+        void* arr_ptr = prop->ContainerPtrToValuePtr<void>(save);
+        uint8* raw = reinterpret_cast<uint8*>(arr_ptr);
+        int32 array_num = *reinterpret_cast<int32*>(raw + 8);
+        if (area < 0 || area >= array_num) return -1;
+        uint8* data_ptr = *reinterpret_cast<uint8**>(raw);
+        uint8* category_ptr = data_ptr + area * 64;
+        int32 ms_num = *reinterpret_cast<int32*>(category_ptr + 8);
+        if (position < 0 || position >= ms_num) return -1;
+        uint8* ms_data = *reinterpret_cast<uint8**>(category_ptr);
+        return *reinterpret_cast<int32*>(ms_data + position * 4);
+    }
+
+    auto load_quests_checked_from_history() -> void
+    {
+        FILE* file = _wfopen(ap_path(STR("ap_quests_sent.txt")).c_str(), STR("r"));
+        if (!file) return;
+        wchar_t line[64];
+        while (fgetws(line, 64, file))
+        {
+            m_quests_checked.insert(_wtoi(line));
+        }
+        fclose(file);
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] {} quetes deja checkees (historique)\n"), (int)m_quests_checked.size());
+    }
+
+    auto scan_subquests() -> void
+    {
+        for (int i = 0; i < subquest_table_count; i++)
+        {
+            const auto& q = subquest_table[i];
+            if (m_quests_checked.count(q.location_id)) continue;
+            int state = get_mission_state(q.area, q.position);
+            if (state == 2)
+            {
+                m_quests_checked.insert(q.location_id);
+                FILE* cf = _wfopen(ap_path(STR("ap_checks.txt")).c_str(), STR("a"));
+                if (cf) { fwprintf(cf, STR("%d\n"), q.location_id); fclose(cf); }
+                FILE* qf = _wfopen(ap_path(STR("ap_quests_sent.txt")).c_str(), STR("a"));
+                if (qf) { fwprintf(qf, STR("%d\n"), q.location_id); fclose(qf); }
+                Output::send<LogLevel::Verbose>(STR("[OT2AP] Quete terminee -> location {}\n"), q.location_id);
+            }
+        }
+    }
+
     // ---- Boucle principale ----
     auto on_update() -> void override
     {
@@ -444,6 +554,7 @@ public:
             load_items_given();
             load_item_defs();
             load_unlocked_characters_from_history(); // AVANT apply_starting_character !
+            load_quests_checked_from_history();
             m_defs_loaded = true;
         }
         if (!m_start_char_applied)
@@ -500,6 +611,14 @@ public:
             Output::send<LogLevel::Verbose>(STR("[OT2AP] VICTOIRE DETECTEE ! Check envoye.\n"));
             m_victory_sent = true;
         }
+
+        if (m_pending_loot_removal)
+        {
+            remove_item(m_pending_loot_label, m_pending_loot_num);
+            m_pending_loot_removal = false;
+        }
+
+        scan_subquests();
 
         process_received_items();
         if (!m_hook_installed) install_chest_hook();
