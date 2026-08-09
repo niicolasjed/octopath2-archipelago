@@ -28,6 +28,7 @@ class OT2APMod : public RC::CppUserModBase
 {
 public:
     bool m_hook_installed = false;          // hook coffre installe
+    UFunction* m_hooked_open_fn = nullptr;  // UFunction sur laquelle le hook est pose
     int m_items_given = 0;                  // nb d'items ap_items.txt deja traites (persistance)
     int m_frame_counter = 0;
     bool m_defs_loaded = false;              // ap_item_defs.txt charge
@@ -37,22 +38,16 @@ public:
     bool m_pending_recruit_check = false;    // un recrutement externe vient d'etre detecte
     bool m_victory_sent = false;             // check de victoire deja envoye
     int m_natural_start_char = 0;            // perso choisi naturellement par le joueur au depart
-    bool m_test_chestloot = false;
     bool m_pending_loot_removal = false;
     std::wstring m_pending_loot_label;
     int32 m_pending_loot_num = 0;
-    std::map<int, int> m_backpack_before_open;
-    bool m_pending_backpack_check = false;
-    int m_backpack_check_delay = 0;
-    bool m_our_item_call = false;
-    bool m_additem_hook_installed = false;
-    bool m_chest_loot_suppress = false;
     std::set<int> m_quests_checked;
 
     std::map<int, std::pair<std::wstring, std::wstring>> m_item_defs; // ap_id -> (type, valeur)
     std::set<int> m_unlocked_chars;          // persos legitimement debloques (depart + items recus)
     std::set<int> m_pending_recruits;        // persos recrutes normalement, en attente de fin de prologue
     std::map<int, int> m_pending_recruit_baseline; // id -> nb de scenarios clairs au moment du recrutement
+    std::map<int, int> m_chest_items;        // location_id -> ap_item_id
 
     OT2APMod() : CppUserModBase()
     {
@@ -75,17 +70,15 @@ public:
     // ---- Donner objet / or ----
     auto give_player_item(const wchar_t* item_label, int32 num) -> void
     {
-        m_our_item_call = true;
         UObject* mgr = UObjectGlobals::FindFirstOf(STR("KSSaveDataManagerBP_C"));
-        if (!mgr) { m_our_item_call = false; return; }
+        if (!mgr) return;
         UFunction* fn = UObjectGlobals::StaticFindObject<UFunction*>(
             nullptr, nullptr, STR("/Script/Majesty.KSSaveDataManager:AddItemToBackpack"));
-        if (!fn) { m_our_item_call = false; return; }
+        if (!fn) return;
         struct { FName ItemLabel; int32 Num; } params{};
         params.ItemLabel = FName(item_label, FNAME_Add);
         params.Num = num;
         mgr->ProcessEvent(fn, &params);
-        m_our_item_call = false;
     }
 
     auto give_player_money(int32 amount) -> void
@@ -234,6 +227,16 @@ public:
                 auto* self = static_cast<OT2APMod*>(custom_data);
                 UObject* chest = context.Context;
                 if (!chest) return;
+                Output::send<LogLevel::Verbose>(STR("[OT2AP] >>> PRE-HOOK declenche\n"));
+
+                // On verifie D'ABORD si ce coffre fait partie de nos locations trackees.
+                // Sinon (coffre non mappe), on ne touche a RIEN -> le butin vanilla reste normal.
+                auto* label_prop = chest->GetPropertyByNameInChain(STR("m_PlacementLabel"));
+                if (!label_prop) return;
+                FName label = *label_prop->ContainerPtrToValuePtr<FName>(chest);
+                int loc_id = chest_label_to_location_id(label.ToString());
+                if (loc_id < 0) return; // coffre non mappe -> on ne bloque rien, laisse le jeu faire
+
                 UFunction* fn = chest->GetFunctionByNameInChain(STR("PickItem"));
                 if (!fn) return;
                 struct { FName ItemLabel; int32 ItemCount; uint8 pad[256]; } params{};
@@ -250,6 +253,7 @@ public:
             [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
                 UObject* chest = context.Context;
                 if (!chest) return;
+                Output::send<LogLevel::Verbose>(STR("[OT2AP] <<< POST-HOOK declenche\n"));
                 auto* self = static_cast<OT2APMod*>(custom_data);
                 auto* label_prop = chest->GetPropertyByNameInChain(STR("m_PlacementLabel"));
                 if (!label_prop) return;
@@ -268,8 +272,9 @@ public:
                 }
             },
             this);
+        m_hooked_open_fn = open_fn;
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement !\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-B]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
@@ -541,6 +546,25 @@ public:
         }
     }
 
+    auto load_chest_items() -> void
+    {
+        m_chest_items.clear();
+        FILE* f = _wfopen(ap_path(STR("ap_chest_items.txt")).c_str(), STR("r"));
+        if (!f) { Output::send<LogLevel::Verbose>(STR("[OT2AP] pas de ap_chest_items.txt\n")); return; }
+        wchar_t line[256];
+        while (fgetws(line, 256, f))
+        {
+            std::wstring s = line;
+            size_t p = s.find(L';');
+            if (p == std::wstring::npos) continue;
+            int loc_id = _wtoi(s.substr(0, p).c_str());
+            int item_id = _wtoi(s.substr(p + 1).c_str());
+            m_chest_items[loc_id] = item_id;
+        }
+        fclose(f);
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] {} coffres charges\n"), (int)m_chest_items.size());
+    }
+
     // ---- Boucle principale ----
     auto on_update() -> void override
     {
@@ -553,6 +577,7 @@ public:
         {
             load_items_given();
             load_item_defs();
+            load_chest_items();
             load_unlocked_characters_from_history(); // AVANT apply_starting_character !
             load_quests_checked_from_history();
             m_defs_loaded = true;
@@ -622,6 +647,18 @@ public:
 
         process_received_items();
         if (!m_hook_installed) install_chest_hook();
+        else
+        {
+            UFunction* now_fn = UObjectGlobals::StaticFindObject<UFunction*>(
+                nullptr, nullptr,
+                STR("/Game/Environment/BP/Object/TreasureBoxBP.TreasureBoxBP_C:Open"));
+            if (now_fn != m_hooked_open_fn)
+            {
+                Output::send<LogLevel::Verbose>(STR("[OT2AP] !!! UFunction Open CHANGEE : {} -> {}\n"),
+                    (uint64)m_hooked_open_fn, (uint64)now_fn);
+                m_hooked_open_fn = now_fn;
+            }
+        }
     }
 
     auto on_unreal_init() -> void override {}

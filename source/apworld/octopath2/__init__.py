@@ -9,6 +9,14 @@ from .Items import OctopathItem, item_table, item_id_to_name
 from .Locations import OctopathLocation, location_table, location_id_to_name
 from .Options import Octopath2Options
 
+from worlds.LauncherComponents import Component, components, Type, launch_subprocess
+
+def launch_client():
+    from .Client import launch
+    launch_subprocess(launch, name="Octopath2Client")
+
+components.append(Component("Octopath 2 Client", func=launch_client, component_type=Type.CLIENT))
+
 
 # WebWorld = infos affichées sur le site web d'Archipelago (setup, guide...).
 class Octopath2Web(WebWorld):
@@ -126,11 +134,28 @@ class Octopath2World(World):
         # que le mod declenche quand il detecte que le joueur a fini le jeu / vaincu Vide)
         self.multiworld.completion_condition[self.player] = lambda state: state.has("Victory", self.player)
 
+    # --- Table coffre -> item place (calculee APRES le remplissage) ---
+    def post_fill(self) -> None:
+        from .chests_apworld import chest_locations
+        chest_ids = set(chest_locations.values())
+        self.chest_items = {}
+        for loc in self.multiworld.get_locations(self.player):
+            if loc.address is None or loc.address not in chest_ids:
+                continue
+            item = loc.item
+            if item is None or item.code is None:
+                continue
+            # item.code si l'objet est A NOUS (donnable nativement par le coffre),
+            # 0 si l'objet appartient a un autre joueur (coffre silencieux)
+            self.chest_items[loc.address] = item.code if item.player == self.player else 0
+        print(f"[OT2] chest_items : {len(self.chest_items)} coffres, "
+              f"{sum(1 for v in self.chest_items.values() if v)} locaux")
+
     # --- Donnees envoyees au client a la connexion ---
     def fill_slot_data(self) -> dict:
-        # Le client recevra ces infos et pourra les ecrire pour le mod.
         return {
             "starting_character": self.options.starting_character.value,
             "randomize_characters": self.options.randomize_characters.value,
             "include_equipment": self.options.include_equipment.value,
+            "chest_items": getattr(self, "chest_items", {}),
         }

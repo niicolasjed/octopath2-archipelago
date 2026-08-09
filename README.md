@@ -31,6 +31,9 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 2. Click **Install APWorld** and select `octopath2.apworld`
 3. Restart the launcher
 
+If the option isn't there, copy `octopath2.apworld` directly into the
+`custom_worlds` folder of your Archipelago installation.
+
 ### 3. Generate and play
 
 1. In the **Options Creator**, select **Octopath Traveler 2** and configure your options (starting character, whether to include equipment/treasures/materials/side quests, character randomization, etc.)
@@ -39,6 +42,9 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 4. In the Archipelago Launcher, search for "Octopath 2 Client" and click **Open** — no separate script needed, the client is bundled inside the APWorld
    - **First time only**: a window will pop up asking you to select your game's `Win64` folder (e.g. `...\Octopath_Traveler2\Octopath_Traveler2\Binaries\Win64`). This is saved automatically so you won't be asked again.
 5. `/connect` to your server, then launch Octopath Traveler 2 and start a **new game**
+
+Connect before starting your in-game save — the client resets its tracking
+   files when it detects a new seed.
 
 ## Important notes
 

@@ -143,7 +143,10 @@ class Octopath2Context(CommonContext):
 
             slot_data = args.get("slot_data", {})
             start_char = slot_data.get("starting_character", 7)
-            logger.info(f"[OT2] Connected! slot_data={slot_data}, start_char={start_char}")
+            logger.info(f"[OT2] Connected! start_char={start_char}, "
+                        f"randomize_chars={slot_data.get('randomize_characters')}, "
+                        f"equip={slot_data.get('include_equipment')}, "
+                        f"{len(slot_data.get('chest_items', {}))} chest entries")
             try:
                 with open(os.path.join(GAME_DIR, "ap_start_char.txt"), "w") as f:
                     f.write(str(start_char))
