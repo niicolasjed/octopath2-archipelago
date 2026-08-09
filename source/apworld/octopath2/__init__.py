@@ -21,18 +21,18 @@ components.append(Component("Octopath 2 Client", func=launch_client, component_t
 # WebWorld = infos affichées sur le site web d'Archipelago (setup, guide...).
 class Octopath2Web(WebWorld):
     tutorials = [Tutorial(
-        "Guide de configuration Multiworld",
-        "Un guide pour configurer Octopath Traveler 2 dans Archipelago.",
-        "Français",
-        "setup_fr.md",
-        "setup/fr",
+        "Multiworld Setup Guide",
+        "A guide to setting up Octopath Traveler 2 for Archipelago multiworld.",
+        "English",
+        "setup_en.md",
+        "setup/en",
         ["Nicolas"]
     )]
 
 
 # La classe principale. Elle DOIT hériter de World.
 class Octopath2World(World):
-    """Octopath Traveler 2 en multiworld Archipelago."""
+    """Octopath Traveler 2 as an Archipelago multiworld randomizer."""
 
     game = "Octopath Traveler 2"          # nom du jeu (doit être unique et constant)
     web = Octopath2Web()
@@ -148,8 +148,6 @@ class Octopath2World(World):
             # item.code si l'objet est A NOUS (donnable nativement par le coffre),
             # 0 si l'objet appartient a un autre joueur (coffre silencieux)
             self.chest_items[loc.address] = item.code if item.player == self.player else 0
-        print(f"[OT2] chest_items : {len(self.chest_items)} coffres, "
-              f"{sum(1 for v in self.chest_items.values() if v)} locaux")
 
     # --- Donnees envoyees au client a la connexion ---
     def fill_slot_data(self) -> dict:

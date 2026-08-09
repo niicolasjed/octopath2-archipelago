@@ -28,14 +28,11 @@ class OT2APMod : public RC::CppUserModBase
 {
 public:
     bool m_hook_installed = false;          // hook coffre installe
-    UFunction* m_hooked_open_fn = nullptr;  // UFunction sur laquelle le hook est pose
     int m_items_given = 0;                  // nb d'items ap_items.txt deja traites (persistance)
     int m_frame_counter = 0;
     bool m_defs_loaded = false;              // ap_item_defs.txt charge
     bool m_start_char_applied = false;       // perso de depart applique (1x par lancement)
-    bool m_join_hook_installed = false;      // hook JoinPlayerCharacterToParty installe
     bool m_our_join_call = false;            // vrai pendant qu'on appelle nous-memes join_character
-    bool m_pending_recruit_check = false;    // un recrutement externe vient d'etre detecte
     bool m_victory_sent = false;             // check de victoire deja envoye
     int m_natural_start_char = 0;            // perso choisi naturellement par le joueur au depart
     bool m_pending_loot_removal = false;
@@ -45,6 +42,7 @@ public:
 
     std::map<int, std::pair<std::wstring, std::wstring>> m_item_defs; // ap_id -> (type, valeur)
     std::set<int> m_unlocked_chars;          // persos legitimement debloques (depart + items recus)
+    std::set<int> m_evicted_chars;           // persos retires apres leur prologue : a maintenir hors equipe
     std::set<int> m_pending_recruits;        // persos recrutes normalement, en attente de fin de prologue
     std::map<int, int> m_pending_recruit_baseline; // id -> nb de scenarios clairs au moment du recrutement
     std::map<int, int> m_chest_items;        // location_id -> ap_item_id
@@ -227,7 +225,6 @@ public:
                 auto* self = static_cast<OT2APMod*>(custom_data);
                 UObject* chest = context.Context;
                 if (!chest) return;
-                Output::send<LogLevel::Verbose>(STR("[OT2AP] >>> PRE-HOOK declenche\n"));
 
                 // On verifie D'ABORD si ce coffre fait partie de nos locations trackees.
                 // Sinon (coffre non mappe), on ne touche a RIEN -> le butin vanilla reste normal.
@@ -235,7 +232,10 @@ public:
                 if (!label_prop) return;
                 FName label = *label_prop->ContainerPtrToValuePtr<FName>(chest);
                 int loc_id = chest_label_to_location_id(label.ToString());
-                if (loc_id < 0) return; // coffre non mappe -> on ne bloque rien, laisse le jeu faire
+                if (loc_id < 0)
+                {
+                    return;
+                }
 
                 UFunction* fn = chest->GetFunctionByNameInChain(STR("PickItem"));
                 if (!fn) return;
@@ -253,7 +253,6 @@ public:
             [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
                 UObject* chest = context.Context;
                 if (!chest) return;
-                Output::send<LogLevel::Verbose>(STR("[OT2AP] <<< POST-HOOK declenche\n"));
                 auto* self = static_cast<OT2APMod*>(custom_data);
                 auto* label_prop = chest->GetPropertyByNameInChain(STR("m_PlacementLabel"));
                 if (!label_prop) return;
@@ -272,9 +271,8 @@ public:
                 }
             },
             this);
-        m_hooked_open_fn = open_fn;
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-B]\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-H]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
@@ -423,46 +421,6 @@ public:
         return true;
     }
 
-    // ---- Hook sur JoinPlayerCharacterToParty : detecte un recrutement du JEU (pas de nous) ----
-    // Le hook ne fait QUE marquer un drapeau (aucun appel lourd ici) : le traitement reel se
-    // fait dans on_update, car appeler une autre fonction Blueprint depuis l'interieur de ce
-    // hook peut faire crasher le jeu (reentrance dans le moteur de script).
-    auto install_join_hook() -> void
-    {
-        UObject* save = UObjectGlobals::FindFirstOf(STR("KSSaveGameBP_C"));
-        if (!save) return;
-        UFunction* fn = save->GetFunctionByNameInChain(STR("JoinPlayerCharacterToParty"));
-        if (!fn) return;
-
-        UObjectGlobals::RegisterHook(
-            fn,
-            [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
-                auto* self = static_cast<OT2APMod*>(custom_data);
-                UObject* chest = context.Context;
-                if (!chest) return;
-                UFunction* fn = chest->GetFunctionByNameInChain(STR("PickItem"));
-                if (!fn) return;
-                struct { FName ItemLabel; int32 ItemCount; uint8 pad[256]; } params{};
-                chest->ProcessEvent(fn, &params);
-                self->m_pending_loot_label = params.ItemLabel.ToString();
-                self->m_pending_loot_num = params.ItemCount;
-                if (self->m_pending_loot_label != L"None" && self->m_pending_loot_num > 0)
-                {
-                    self->m_pending_loot_removal = true;
-                    Output::send<LogLevel::Verbose>(STR("[OT2AP] Butin previsionnel : {} x{}\n"),
-                        self->m_pending_loot_label, self->m_pending_loot_num);
-                }
-            },
-            [](UnrealScriptFunctionCallableContext& context, void* custom_data) {
-                auto* self = static_cast<OT2APMod*>(custom_data);
-                if (self->m_our_join_call) return;
-                self->m_pending_recruit_check = true;
-            },
-            this);
-        m_join_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook join installe\n"));
-    }
-
     // ---- Detection de la victoire (chapitre final + epilogue termines) ----
     // Endroll_ClearedMS est un tableau de 50 int32 (-1 = vide). L'index 49 correspond a
     // MS_EPI_00 (l'epilogue, tout dernier evenement du jeu, apres avoir vaincu Vide the Wicked).
@@ -527,6 +485,21 @@ public:
         Output::send<LogLevel::Verbose>(STR("[OT2AP] {} quetes deja checkees (historique)\n"), (int)m_quests_checked.size());
     }
 
+    auto load_evicted_chars() -> void
+    {
+        m_evicted_chars.clear();
+        FILE* f = _wfopen(ap_path(STR("ap_evicted.txt")).c_str(), STR("r"));
+        if (!f) return;
+        wchar_t line[64];
+        while (fgetws(line, 64, f))
+        {
+            int id = _wtoi(line);
+            if (id >= 1 && id <= 8) m_evicted_chars.insert(id);
+        }
+        fclose(f);
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] {} persos expulses (historique)\n"), (int)m_evicted_chars.size());
+    }
+
     auto scan_subquests() -> void
     {
         for (int i = 0; i < subquest_table_count; i++)
@@ -580,21 +553,26 @@ public:
             load_chest_items();
             load_unlocked_characters_from_history(); // AVANT apply_starting_character !
             load_quests_checked_from_history();
+            load_evicted_chars();
             m_defs_loaded = true;
         }
         if (!m_start_char_applied)
         {
             m_start_char_applied = apply_starting_character(); // ne reste "fait" que si vraiment reussi
         }
-        if (!m_join_hook_installed && m_start_char_applied) install_join_hook();
 
-        // Un recrutement externe vient d'etre detecte : on identifie qui, mais on NE LE VIRE PAS
-        // tout de suite (son propre prologue pourrait en avoir besoin).
-        if (m_pending_recruit_check)
+        // Scan periodique de l'equipe : si un perso y est sans venir d'Archipelago,
+        // c'est un recrutement normal. On l'identifie mais on NE LE VIRE PAS tout de
+        // suite (son propre prologue pourrait en avoir besoin).
+        // NB : scan periodique et non declenche par hook -- le jeu ne passe PAS par
+        // JoinPlayerCharacterToParty lors d'un recrutement normal (verifie en jeu).
+        if (m_start_char_applied)
         {
             for (int id = 1; id <= 8; id++)
             {
-                if (is_in_party(id) && !m_unlocked_chars.count(id) && !m_pending_recruits.count(id))
+                if (id != m_natural_start_char && is_in_party(id)
+                    && !m_unlocked_chars.count(id) && !m_pending_recruits.count(id)
+                    && !m_evicted_chars.count(id))
                 {
                     m_pending_recruits.insert(id);
                     m_pending_recruit_baseline[id] = count_cleared_scenarios();
@@ -602,7 +580,6 @@ public:
                     break;
                 }
             }
-            m_pending_recruit_check = false;
         }
 
         // Pour chaque perso en attente, on verifie si le compteur a assez augmente depuis
@@ -615,6 +592,9 @@ public:
             if (count_cleared_scenarios() >= baseline + needed)
             {
                 leave_character(id);
+                m_evicted_chars.insert(id);
+                FILE* ef = _wfopen(ap_path(STR("ap_evicted.txt")).c_str(), STR("a"));
+                if (ef) { fwprintf(ef, STR("%d\n"), id); fclose(ef); }
                 int loc_id = 6560100 + id;
                 FILE* cf = _wfopen(ap_path(STR("ap_checks.txt")).c_str(), STR("a"));
                 if (cf) { fwprintf(cf, STR("%d\n"), loc_id); fclose(cf); }
@@ -625,6 +605,17 @@ public:
             else
             {
                 ++it;
+            }
+        }
+
+        // Le jeu remet parfois un perso dans l'equipe apres son retrait (scenes de fin
+        // de chapitre). On re-verifie a chaque cycle : le check, lui, ne part qu'une fois.
+        for (int id : m_evicted_chars)
+        {
+            if (!m_unlocked_chars.count(id) && is_in_party(id))
+            {
+                Output::send<LogLevel::Verbose>(STR("[OT2AP] Perso {} revenu -> retrait\n"), id);
+                leave_character(id);
             }
         }
 
@@ -647,18 +638,6 @@ public:
 
         process_received_items();
         if (!m_hook_installed) install_chest_hook();
-        else
-        {
-            UFunction* now_fn = UObjectGlobals::StaticFindObject<UFunction*>(
-                nullptr, nullptr,
-                STR("/Game/Environment/BP/Object/TreasureBoxBP.TreasureBoxBP_C:Open"));
-            if (now_fn != m_hooked_open_fn)
-            {
-                Output::send<LogLevel::Verbose>(STR("[OT2AP] !!! UFunction Open CHANGEE : {} -> {}\n"),
-                    (uint64)m_hooked_open_fn, (uint64)now_fn);
-                m_hooked_open_fn = now_fn;
-            }
-        }
     }
 
     auto on_unreal_init() -> void override {}

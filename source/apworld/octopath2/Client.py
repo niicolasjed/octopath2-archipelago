@@ -129,7 +129,7 @@ class Octopath2Context(CommonContext):
 
             if current_seed and current_seed != last_seed:
                 logger.info(f"[OT2] New game detected (different seed) -> resetting tracking files")
-                for fname in ["ap_checks.txt", "ap_items.txt", "ap_given.txt", "ap_quests_sent.txt"]:
+                for fname in ["ap_checks.txt", "ap_items.txt", "ap_given.txt", "ap_quests_sent.txt", "ap_evicted.txt"]:
                     try:
                         open(os.path.join(GAME_DIR, fname), "w").close()
                     except Exception as e:
