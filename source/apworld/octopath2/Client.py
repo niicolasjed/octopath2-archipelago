@@ -103,6 +103,7 @@ class Octopath2Context(CommonContext):
         super().__init__(server_address, password)
         self.items_already_given = 0
         self.items_handling = 0b111
+        self.sent_checks = set()
 
     async def server_auth(self, password_requested: bool = False):
         if password_requested and not self.password:
@@ -133,6 +134,7 @@ class Octopath2Context(CommonContext):
                         open(os.path.join(GAME_DIR, fname), "w").close()
                     except Exception as e:
                         logger.error(f"[OT2] error resetting {fname}: {e}")
+                self.sent_checks = set()
                 try:
                     with open(seed_file, "w") as f:
                         f.write(current_seed)
@@ -148,6 +150,17 @@ class Octopath2Context(CommonContext):
             except Exception as e:
                 logger.error(f"[OT2] error writing start_char: {e}")
 
+            chest_items = slot_data.get("chest_items", {})
+            try:
+                with open(os.path.join(GAME_DIR, "ap_chest_items.txt"), "w") as f:
+                    for loc_id, item_id in chest_items.items():
+                        f.write(f"{loc_id};{item_id}\n")
+                logger.info(f"[OT2] ap_chest_items.txt written: {len(chest_items)} chests")
+            except Exception as e:
+                logger.error(f"[OT2] error writing chest_items: {e}")
+
+            
+
         if cmd == "ReceivedItems":
             self.write_received_items()
 
@@ -162,25 +175,30 @@ class Octopath2Context(CommonContext):
 
 
 async def check_reader_loop(ctx: Octopath2Context):
-    sent_checks = set()
     logged_once = False
     while not ctx.exit_event.is_set():
         try:
+            if ctx.slot is None:
+                await asyncio.sleep(0.5)
+                continue
             if os.path.exists(CHECKS_FILE):
                 if not logged_once:
                     logger.info(f"[OT2] Watching: {CHECKS_FILE}")
                     logged_once = True
                 with open(CHECKS_FILE, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and line not in sent_checks:
-                            location_id = int(line)
-                            await ctx.send_msgs([{
-                                "cmd": "LocationChecks",
-                                "locations": [location_id]
-                            }])
-                            sent_checks.add(line)
-                            logger.info(f"[OT2] Check sent: location {location_id}")
+                    lines = f.read().splitlines()
+                new_locations = []
+                for line in lines:
+                    line = line.strip()
+                    if line and line not in ctx.sent_checks:
+                        new_locations.append(int(line))
+                        ctx.sent_checks.add(line)
+                if new_locations:
+                    await ctx.send_msgs([{
+                        "cmd": "LocationChecks",
+                        "locations": new_locations
+                    }])
+                    logger.info(f"[OT2] Checks sent: {new_locations}")
             else:
                 if not logged_once:
                     logger.info(f"[OT2] File NOT FOUND: {CHECKS_FILE}")
