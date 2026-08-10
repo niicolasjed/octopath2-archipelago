@@ -199,6 +199,19 @@ public:
                         m_unlocked_chars.insert(cid);
                         heal_character(cid);
                         Output::send<LogLevel::Verbose>(STR("[OT2AP] Personnage recu : ID {}\n"), val);
+                        // La scene de recrutement en jeu ne se declenchera plus jamais
+                        // (le jeu ne propose que la reminiscence). On valide donc la
+                        // location ici, sinon elle serait DEFINITIVEMENT inatteignable.
+                        if (!m_evicted_chars.count(cid))
+                        {
+                            m_evicted_chars.insert(cid);
+                            FILE* ef = _wfopen(ap_path(STR("ap_evicted.txt")).c_str(), STR("a"));
+                            if (ef) { fwprintf(ef, STR("%d\n"), cid); fclose(ef); }
+                            int loc_id = 6560100 + cid;
+                            FILE* cf = _wfopen(ap_path(STR("ap_checks.txt")).c_str(), STR("a"));
+                            if (cf) { fwprintf(cf, STR("%d\n"), loc_id); fclose(cf); }
+                            Output::send<LogLevel::Verbose>(STR("[OT2AP] Check recrutement (via AP) -> location {}\n"), loc_id);
+                        }
                     }
                 }
                 else
@@ -332,7 +345,7 @@ public:
             },
             this);
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-3]\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-4]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
