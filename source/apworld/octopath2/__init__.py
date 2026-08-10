@@ -147,7 +147,11 @@ class Octopath2World(World):
                 continue
             # item.code si l'objet est A NOUS (donnable nativement par le coffre),
             # 0 si l'objet appartient a un autre joueur (coffre silencieux)
-            self.chest_items[loc.address] = item.code if item.player == self.player else 0
+            # 0 = le coffre reste silencieux (objet distant, or, ou personnage)
+            native = (item.player == self.player
+                      and not (6540000 <= item.code < 6550000)     # or
+                      and not (6560000 <= item.code < 6570000))    # personnages
+            self.chest_items[loc.address] = item.code if native else 0
 
     # --- Donnees envoyees au client a la connexion ---
     def fill_slot_data(self) -> dict:

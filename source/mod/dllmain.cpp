@@ -38,6 +38,8 @@ public:
     bool m_victory_sent = false;             // check de victoire deja envoye
     int m_natural_start_char = 0;            // perso choisi naturellement par le joueur au depart
     bool m_pending_loot_removal = false;
+    std::wstring m_v2_expect_label;          // objet ecrit dans ObjectData, a verifier
+    int m_v2_expect_delay = 0;               // cycles restants avant verification
     std::wstring m_pending_loot_label;
     int32 m_pending_loot_num = 0;
     std::set<int> m_quests_checked;
@@ -48,6 +50,7 @@ public:
     std::set<int> m_pending_recruits;        // persos recrutes normalement, en attente de fin de prologue
     std::map<int, int> m_pending_recruit_baseline; // id -> nb de scenarios clairs au moment du recrutement
     std::map<int, int> m_chest_items;        // location_id -> ap_item_id
+    bool m_native_popup = false;             // v2 : le coffre affiche/donne l'objet AP lui-meme
 
     OT2APMod() : CppUserModBase()
     {
@@ -239,6 +242,61 @@ public:
                     return;
                 }
 
+                if (self->m_native_popup)
+                {
+                    auto it = self->m_chest_items.find(loc_id);
+                    if (it != self->m_chest_items.end())
+                    {
+                        auto* od = chest->GetPropertyByNameInChain(STR("ObjectData"));
+                        if (od)
+                        {
+                            void* od_ptr = od->ContainerPtrToValuePtr<void>(chest);
+                            auto* od_struct = static_cast<FStructProperty*>(od)->GetStruct();
+                            auto* hil = od_struct->GetPropertyByNameInChain(STR("HaveItemLabel"));
+                            auto* hic = od_struct->GetPropertyByNameInChain(STR("HaveItemCnt"));
+                            auto* hd  = od_struct->GetPropertyByNameInChain(STR("HideDialog"));
+                            if (hil && hic && hd)
+                            {
+                                FName* label = hil->ContainerPtrToValuePtr<FName>(od_ptr);
+                                int32* cnt = hic->ContainerPtrToValuePtr<int32>(od_ptr);
+                                bool* hide = hd->ContainerPtrToValuePtr<bool>(od_ptr);
+
+
+                                int ap_id = it->second;
+                                bool shown = false;
+                                if (ap_id != 0)   // 0 = objet d'un autre joueur
+                                {
+                                    auto d = self->m_item_defs.find(ap_id);
+                                    if (d != self->m_item_defs.end() && d->second.first == STR("item"))
+                                    {
+                                        *label = FName(d->second.second.c_str(), FNAME_Add);
+                                        *cnt = 1;
+                                        *hide = false;
+                                        shown = true;
+                                        Output::send<LogLevel::Verbose>(STR("[OT2AP] v2 : coffre {} -> {}\n"),
+                                            loc_id, d->second.second);
+                                        self->m_v2_expect_label = d->second.second;
+                                        self->m_v2_expect_delay = 2;
+                                    }
+                                }
+                                if (!shown)
+                                {
+                                    *cnt = 0;
+                                    *hide = true;
+                                    Output::send<LogLevel::Verbose>(STR("[OT2AP] v2 : coffre {} silencieux\n"), loc_id);
+                                }
+                            }
+                        }
+                    }
+                    UFunction* pf = chest->GetFunctionByNameInChain(STR("PickItem"));
+                    if (pf)
+                    {
+                        struct { FName ItemLabel; int32 ItemCount; uint8 pad[256]; } pp{};
+                        chest->ProcessEvent(pf, &pp);
+                    }
+                    return;
+                }
+
                 UFunction* fn = chest->GetFunctionByNameInChain(STR("PickItem"));
                 if (!fn) return;
                 struct { FName ItemLabel; int32 ItemCount; uint8 pad[256]; } params{};
@@ -274,7 +332,7 @@ public:
             },
             this);
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-AH]\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-3]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
@@ -456,6 +514,18 @@ public:
         Output::send<LogLevel::Verbose>(STR("[OT2AP] Objet retire : {} x{} -> success={}\n"), item_label, num, params.ReturnValue);
     }
 
+    auto has_item(const std::wstring& item_label) -> bool
+    {
+        UObject* mgr = UObjectGlobals::FindFirstOf(STR("KSSaveDataManagerBP_C"));
+        if (!mgr) return false;
+        UFunction* fn = mgr->GetFunctionByNameInChain(STR("FindItemFromBackpack"));
+        if (!fn) return false;
+        struct { FName ItemLabel; bool ReturnValue; uint8_t pad[128]; } params{};
+        params.ItemLabel = FName(item_label.c_str(), FNAME_Add);
+        mgr->ProcessEvent(fn, &params);
+        return params.ReturnValue;
+    }
+
     auto get_mission_state(int area, int position) -> int
     {
         UObject* save = UObjectGlobals::FindFirstOf(STR("KSSaveGameBP_C"));
@@ -519,6 +589,17 @@ public:
                 Output::send<LogLevel::Verbose>(STR("[OT2AP] Quete terminee -> location {}\n"), q.location_id);
             }
         }
+    }
+
+    auto load_native_popup_flag() -> void
+    {
+        m_native_popup = true;
+        FILE* f = _wfopen(ap_path(STR("ap_native_popup.txt")).c_str(), STR("r"));
+        if (!f) { Output::send<LogLevel::Verbose>(STR("[OT2AP] mode v2 (popup natif)\n")); return; }
+        wchar_t line[16];
+        if (fgetws(line, 16, f)) m_native_popup = (_wtoi(line) != 0);
+        fclose(f);
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] mode {} \n"), m_native_popup ? STR("v2 (popup natif)") : STR("v1 (remove_item)"));
     }
 
     auto load_chest_items() -> void
@@ -586,6 +667,7 @@ public:
             load_items_given();
             load_item_defs();
             load_chest_items();
+            load_native_popup_flag();
             load_unlocked_characters_from_history(); // AVANT apply_starting_character !
             load_quests_checked_from_history();
             load_evicted_chars();
@@ -677,6 +759,20 @@ public:
             Output::send<LogLevel::Verbose>(STR("[OT2AP] *** DEFAITE detectee ***\n"));
         }
         m_was_defeated = defeat_now;
+        if (m_v2_expect_delay > 0)
+        {
+            m_v2_expect_delay--;
+            if (m_v2_expect_delay == 0)
+            {
+                if (!has_item(m_v2_expect_label))
+                {
+                    Output::send<LogLevel::Verbose>(STR("[OT2AP] v2 : {} non donne par le coffre -> filet\n"),
+                        m_v2_expect_label);
+                    give_player_item(m_v2_expect_label.c_str(), 1);
+                }
+                m_v2_expect_label.clear();
+            }
+        }
         process_received_items();
         if (!m_hook_installed) install_chest_hook();
     }

@@ -104,6 +104,8 @@ class Octopath2Context(CommonContext):
         self.items_already_given = 0
         self.items_handling = 0b111
         self.sent_checks = set()
+        self.local_locations = set()
+        self.native_popup = False
 
     async def server_auth(self, password_requested: bool = False):
         if password_requested and not self.password:
@@ -161,6 +163,13 @@ class Octopath2Context(CommonContext):
                 logger.info(f"[OT2] ap_chest_items.txt written: {len(chest_items)} chests")
             except Exception as e:
                 logger.error(f"[OT2] error writing chest_items: {e}")
+            self.local_locations = {int(k) for k, v in chest_items.items() if v != 0}
+            try:
+                with open(os.path.join(GAME_DIR, "ap_native_popup.txt"), "r") as f:
+                    self.native_popup = (f.read().strip() != "0")
+            except Exception:
+                self.native_popup = True
+            logger.info(f"[OT2] native popup mode: {self.native_popup}")
 
             
 
@@ -169,10 +178,17 @@ class Octopath2Context(CommonContext):
 
     def write_received_items(self):
         try:
+            skipped = 0
             with open(ITEMS_FILE, "w", encoding="utf-8") as f:
                 for network_item in self.items_received:
+                    if (self.native_popup
+                            and network_item.player == self.slot
+                            and network_item.location in self.local_locations):
+                        skipped += 1
+                        continue
                     f.write(f"{network_item.item}\n")
-            logger.info(f"[OT2] {len(self.items_received)} items written for the game")
+            logger.info(f"[OT2] {len(self.items_received) - skipped} items written "
+                        f"({skipped} already given natively)")
         except Exception as e:
             logger.error(f"[OT2] Error writing items: {e}")
 

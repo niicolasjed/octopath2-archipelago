@@ -98,6 +98,11 @@ so no story sequence can softlock.
 **Tracking files** are written to `Mods\OT2AP\ap\`. You never need to edit these
 by hand.
 
+**Chests show the real item.** When a chest contains one of your own items, the
+game displays and gives it directly — the popup shows what you actually receive.
+Items belonging to other players arrive through the multiworld as usual, and
+their chests open silently.
+
 ## Troubleshooting
 
 **The game crashes on startup with the mod enabled.**
@@ -116,3 +121,8 @@ to pick the folder again.
 **The mod does not appear to load.**
 Check that `mods.txt` contains the `OT2AP : 1` line and that the `OT2AP` folder
 sits directly inside `Mods`, not nested one level deeper.
+
+**Something looks wrong with chest contents.**
+You can revert to the previous behaviour, where every chest is silenced and all
+items arrive through the multiworld. Create a file named `ap_native_popup.txt`
+in `Mods\OT2AP\ap\` containing a single `0`, then restart the game.

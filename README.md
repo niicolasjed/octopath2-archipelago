@@ -15,7 +15,7 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 
 - Octopath Traveler 2 (PC / Steam)
 - [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) installed in the game folder
-- [Archipelago](https://archipelago.gg) — developed against the `main` branch (post-0.6.7 release)
+- [Archipelago](https://archipelago.gg) — Archipelago 0.6.4 or newer
 
 ## Installation
 
@@ -48,6 +48,7 @@ Connect before starting your in-game save — the client resets its tracking
 
 ## Important notes
 
+- **Chests show the real item.** When a chest contains one of your own items, the game displays and gives it directly — the popup shows what you actually receive, with no delay. Items belonging to other players arrive through the multiworld as usual, and their chests open silently.
 - **Always start a fresh save for a new Archipelago run.** The client automatically detects when you connect to a different seed than last time and resets the mod's tracking files for you. You should still start a genuinely new in-game save as well, to keep story progression consistent with what the multiworld expects.
 - **Some areas become temporarily locked by the base game's story** (this is normal Octopath Traveler 2 behavior, not a mod bug). For example, Osvald's prologue prison is inaccessible again until you finish his full storyline. Grab every chest you can see before leaving a story-locked area.
 - **Character safety mechanism**: if you're given a different starting character (or recruit one through the multiworld) than the one you picked at the title screen, the mod will **not** swap characters mid-scene — it waits until that character's own prologue is properly finished before making the switch, to avoid softlocking any story sequence.
@@ -57,7 +58,9 @@ Connect before starting your in-game save — the client resets its tracking
 
 - The victory condition (finishing the epilogue) has been tested for false positives but not yet confirmed by an actual full playthrough — feedback on this is very welcome.
 - Quest items and story-critical items are intentionally **not** shuffled to avoid softlocks; only chests, side quests, equipment/consumables/treasures/materials, gold, and characters are part of the pool.
+- If the game crashes or is force-closed, an item obtained just before may be lost. Chests containing your own items can simply be reopened after reloading; for items belonging to other players, ask the server host to re-send them with `/send <your slot> <item name>`.
 
 ## Troubleshooting
 
 - **Game crashes on startup with the mod enabled**: this has happened intermittently for at least one user and was resolved (in their case) after enabling the UE4SS GUI console (`GuiConsoleEnabled = 1` / `GuiConsoleVisible = 1` in `UE4SS-settings.ini`, under `[Debug]`). However, this doesn't reproduce consistently, so it may not be the actual root cause — if you hit this crash, try that setting, but please also report it on the Discord thread with your `UE4SS.log` and a screenshot of the debug panel at the moment of the crash so we can investigate further.
+- **Something wrong with chest contents**: you can revert to the previous behaviour, where every chest is silenced and all items arrive through the multiworld. Create a file named `ap_native_popup.txt` in `Mods\\OT2AP\\ap\\` containing a single `0`, then restart the game. Please report the issue on the Discord thread if you need this.
