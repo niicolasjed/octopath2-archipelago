@@ -65,7 +65,7 @@ class Goal(Choice):
 @dataclass
 class Octopath2Options(PerGameCommonOptions):
     starting_character: StartingCharacter
-    death_link: DeathLink
+    #death_link: DeathLink
     include_equipment: IncludeEquipment
     randomize_characters: RandomizeCharacters
     include_treasures: IncludeTreasures

@@ -28,6 +28,8 @@ class OT2APMod : public RC::CppUserModBase
 {
 public:
     bool m_hook_installed = false;          // hook coffre installe
+    bool m_battle_hook_installed = false;    // hook CheckBattleDefeat installe
+    bool m_was_defeated = false;             // etat precedent de CheckBattleDefeat
     int m_items_given = 0;                  // nb d'items ap_items.txt deja traites (persistance)
     int m_frame_counter = 0;
     bool m_defs_loaded = false;              // ap_item_defs.txt charge
@@ -272,7 +274,7 @@ public:
             },
             this);
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-H]\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-AH]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
@@ -538,6 +540,39 @@ public:
         Output::send<LogLevel::Verbose>(STR("[OT2AP] {} coffres charges\n"), (int)m_chest_items.size());
     }
 
+    auto check_battle_defeat() -> bool
+    {
+        UObject* mgr = UObjectGlobals::FindFirstOf(STR("BattleManagerBP_C"));
+        if (!mgr) return false;
+        UFunction* fn = mgr->GetFunctionByNameInChain(STR("CheckBattleDefeat"));
+        if (!fn) return false;
+        struct { bool bBattleDefeat; bool bEightBattleChange; uint8_t pad[64]; } params{};
+        mgr->ProcessEvent(fn, &params);
+        return params.bBattleDefeat;
+    }
+
+    auto is_battle_end() -> bool
+    {
+        UObject* mgr = UObjectGlobals::FindFirstOf(STR("BattleManagerBP_C"));
+        if (!mgr) return true;
+        UFunction* fn = mgr->GetFunctionByNameInChain(STR("IsBattleEnd"));
+        if (!fn) return true;
+        struct { bool IsEnd; uint8_t pad[64]; } params{};
+        mgr->ProcessEvent(fn, &params);
+        return params.IsEnd;
+    }
+
+    auto check_battle_victory() -> bool
+    {
+        UObject* mgr = UObjectGlobals::FindFirstOf(STR("BattleManagerBP_C"));
+        if (!mgr) return false;
+        UFunction* fn = mgr->GetFunctionByNameInChain(STR("CheckBattleVictory"));
+        if (!fn) return false;
+        struct { bool ReturnValue; bool IsVictory; uint8_t pad[64]; } params{};
+        mgr->ProcessEvent(fn, &params);
+        return params.ReturnValue;
+    }
+
     // ---- Boucle principale ----
     auto on_update() -> void override
     {
@@ -636,6 +671,12 @@ public:
 
         scan_subquests();
 
+        bool defeat_now = check_battle_defeat() && !check_battle_victory();
+        if (defeat_now && !m_was_defeated)
+        {
+            Output::send<LogLevel::Verbose>(STR("[OT2AP] *** DEFAITE detectee ***\n"));
+        }
+        m_was_defeated = defeat_now;
         process_received_items();
         if (!m_hook_installed) install_chest_hook();
     }
