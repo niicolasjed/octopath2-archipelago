@@ -150,7 +150,8 @@ class Octopath2World(World):
             # 0 = le coffre reste silencieux (objet distant, or, ou personnage)
             native = (item.player == self.player
                       and not (6540000 <= item.code < 6550000)     # or
-                      and not (6560000 <= item.code < 6570000))    # personnages
+                      and not (6560000 <= item.code < 6570000)     # personnages
+                      and not (6570127 <= item.code <= 6570132))   # objets de licence de guilde
             self.chest_items[loc.address] = item.code if native else 0
 
     # --- Donnees envoyees au client a la connexion ---

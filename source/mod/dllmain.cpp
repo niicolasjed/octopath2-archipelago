@@ -345,7 +345,7 @@ public:
             },
             this);
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-4]\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-8]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
@@ -719,7 +719,9 @@ public:
             int id = *it;
             int baseline = m_pending_recruit_baseline[id];
             int needed = prologue_segments_needed(id);
-            if (count_cleared_scenarios() >= baseline + needed)
+            int in_party_a = 0;
+            for (int k = 1; k <= 8; k++) if (is_in_party(k)) in_party_a++;
+            if (count_cleared_scenarios() >= baseline + needed && in_party_a > 1)
             {
                 leave_character(id);
                 m_evicted_chars.insert(id);
@@ -744,6 +746,9 @@ public:
         {
             if (!m_unlocked_chars.count(id) && is_in_party(id))
             {
+                int in_party_b = 0;
+                for (int k = 1; k <= 8; k++) if (is_in_party(k)) in_party_b++;
+                if (in_party_b <= 1) continue;   // ne jamais vider l'equipe
                 Output::send<LogLevel::Verbose>(STR("[OT2AP] Perso {} revenu -> retrait\n"), id);
                 leave_character(id);
             }
