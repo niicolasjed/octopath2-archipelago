@@ -345,7 +345,7 @@ public:
             },
             this);
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-8]\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-9]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
@@ -489,6 +489,20 @@ public:
         heal_character(char_id);
 
         if (m_natural_start_char != char_id) leave_character(m_natural_start_char);
+
+        // Le perso choisi au titre est exclu du scan a jamais (id != m_natural_start_char)
+        // et sa scene de recrutement ne se rejouera pas -> on valide sa location ici,
+        // sinon elle serait DEFINITIVEMENT inatteignable. Vrai qu'il soit evince ou non.
+        if (!m_evicted_chars.count(m_natural_start_char))
+        {
+            m_evicted_chars.insert(m_natural_start_char);
+            FILE* ef = _wfopen(ap_path(STR("ap_evicted.txt")).c_str(), STR("a"));
+            if (ef) { fwprintf(ef, STR("%d\n"), m_natural_start_char); fclose(ef); }
+            int loc_id = 6560100 + m_natural_start_char;
+            FILE* cf = _wfopen(ap_path(STR("ap_checks.txt")).c_str(), STR("a"));
+            if (cf) { fwprintf(cf, STR("%d\n"), loc_id); fclose(cf); }
+            Output::send<LogLevel::Verbose>(STR("[OT2AP] Check recrutement (perso de depart) -> location {}\n"), loc_id);
+        }
 
         Output::send<LogLevel::Verbose>(STR("[OT2AP] Perso de depart applique : ID {}\n"), char_id);
         return true;
