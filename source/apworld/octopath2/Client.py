@@ -106,6 +106,7 @@ class Octopath2Context(CommonContext):
         self.sent_checks = set()
         self.local_locations = set()
         self.native_popup = False
+        self.banner_written = 0
 
     async def server_auth(self, password_requested: bool = False):
         if password_requested and not self.password:
@@ -131,7 +132,7 @@ class Octopath2Context(CommonContext):
 
             if current_seed and current_seed != last_seed:
                 logger.info(f"[OT2] New game detected (different seed) -> resetting tracking files")
-                for fname in ["ap_checks.txt", "ap_items.txt", "ap_given.txt", "ap_quests_sent.txt", "ap_evicted.txt"]:
+                for fname in ["ap_checks.txt", "ap_items.txt", "ap_given.txt", "ap_quests_sent.txt", "ap_evicted.txt", "ap_banner.txt"]:
                     try:
                         open(os.path.join(GAME_DIR, fname), "w").close()
                     except Exception as e:
@@ -170,11 +171,33 @@ class Octopath2Context(CommonContext):
             except Exception:
                 self.native_popup = True
             logger.info(f"[OT2] native popup mode: {self.native_popup}")
+            self.banner_first = True
 
             
 
         if cmd == "ReceivedItems":
+            all_items = self.items_received
+            if getattr(self, "banner_first", False):
+                # premier paquet apres connexion : c'est tout l'historique, on n'annonce rien
+                self.banner_first = False
+                self.banner_written = len(all_items)
+            else:
+                for net_item in all_items[self.banner_written:]:
+                    if net_item.player != self.slot:
+                        sender = self.player_names.get(net_item.player, "someone")
+                        name = self.item_names.lookup_in_slot(net_item.item, self.slot)
+                        self.write_banner(f"< {name} from {sender}")
+                self.banner_written = len(all_items)
             self.write_received_items()
+        
+        if cmd == "PrintJSON":
+            if args.get("type") == "ItemSend":
+                receiving = args.get("receiving")
+                item = args.get("item")
+                if item is not None and item.player == self.slot and receiving != self.slot:
+                    who = self.player_names.get(receiving, "someone")
+                    name = self.item_names.lookup_in_slot(item.item, receiving)
+                    self.write_banner(f"> {name} to {who}")
 
     def write_received_items(self):
         try:
@@ -191,6 +214,13 @@ class Octopath2Context(CommonContext):
                         f"({skipped} already given natively)")
         except Exception as e:
             logger.error(f"[OT2] Error writing items: {e}")
+
+    def write_banner(self, line: str):
+        try:
+            with open(os.path.join(GAME_DIR, "ap_banner.txt"), "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception as e:
+            logger.error(f"[OT2] error writing banner: {e}")
 
 
 async def check_reader_loop(ctx: Octopath2Context):

@@ -20,6 +20,7 @@
 #include "chest_table.hpp"
 #include <map>
 #include "subquest_table.hpp"
+#include <Unreal/FText.hpp>
 
 using namespace RC;
 using namespace RC::Unreal;
@@ -43,7 +44,11 @@ public:
     std::wstring m_pending_loot_label;
     int32 m_pending_loot_num = 0;
     std::set<int> m_quests_checked;
+    UObject* m_banner = nullptr;             // widget de banniere, cree une seule fois
+    int m_banner_ttl = 0;                    // cycles restants avant effacement
+    int m_banner_read = 0;                   // lignes de ap_banner.txt deja affichees
 
+    std::vector<std::wstring> m_banner_lines;   // dernieres lignes affichees
     std::map<int, std::pair<std::wstring, std::wstring>> m_item_defs; // ap_id -> (type, valeur)
     std::set<int> m_unlocked_chars;          // persos legitimement debloques (depart + items recus)
     std::set<int> m_evicted_chars;           // persos retires apres leur prologue : a maintenir hors equipe
@@ -345,7 +350,7 @@ public:
             },
             this);
         m_hook_installed = true;
-        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-9]\n"));
+        Output::send<LogLevel::Verbose>(STR("[OT2AP] Hook coffre installe automatiquement ! [BUILD-48]\n"));
     }
 
     // ---- Detection : vraiment en jeu (pas au menu) ----
@@ -681,6 +686,165 @@ public:
         return params.ReturnValue;
     }
 
+    auto get_item_name(const std::wstring& label) -> std::wstring
+    {
+        UFunction* fn = UObjectGlobals::StaticFindObject<UFunction*>(
+            nullptr, nullptr, STR("/Script/Majesty.ItemDataUtility:GetItemNameText"));
+        if (!fn) return label;
+        UObject* ctx = UObjectGlobals::FindFirstOf(STR("KSCharacterManagerBP_C"));
+        if (!ctx) return label;
+        struct { FText outItemName; FName ItemLabel; bool ReturnValue; uint8_t pad[128]; } params{};
+        params.ItemLabel = FName(label.c_str(), FNAME_Add);
+        ctx->ProcessEvent(fn, &params);
+        std::wstring r = params.outItemName.ToString();
+        return r.empty() ? label : r;
+    }
+
+    auto get_char_name(int cid) -> std::wstring
+    {
+        switch (cid)
+        {
+            case 1: return STR("Hikari");
+            case 2: return STR("Ochette");
+            case 3: return STR("Castti");
+            case 4: return STR("Partitio");
+            case 5: return STR("Temenos");
+            case 6: return STR("Osvald");
+            case 7: return STR("Throne");
+            case 8: return STR("Agnea");
+            default: return STR("?");
+        }
+    }
+
+    auto show_banner_clear() -> void
+    {
+        if (!m_banner) return;
+        auto* mp = m_banner->GetPropertyByNameInChain(STR("Message"));
+        if (!mp) return;
+        UObject* tb = *mp->ContainerPtrToValuePtr<UObject*>(m_banner);
+        if (!tb) return;
+        UFunction* st = tb->GetFunctionByNameInChain(STR("SetText"));
+        if (!st) return;
+        struct { FText InText; uint8_t pad[64]; } sp{};
+        sp.InText.SetString(FString(STR("")));
+        tb->ProcessEvent(st, &sp);
+    }
+
+    auto show_banner(const std::wstring& text) -> void
+    {
+        if (!m_banner)
+        {
+            UObject* cls = UObjectGlobals::StaticFindObject<UObject*>(
+                nullptr, nullptr,
+                STR("/Game/UserInterface/Narration/BP/NarrationMessageWidget.NarrationMessageWidget_C"));
+            UObject* ctx = UObjectGlobals::FindFirstOf(STR("KSCharacterManagerBP_C"));
+            if (!cls || !ctx) return;
+            UFunction* cw = UObjectGlobals::StaticFindObject<UFunction*>(
+                nullptr, nullptr, STR("/Script/UMG.WidgetBlueprintLibrary:Create"));
+            if (!cw) return;
+            struct { UObject* World; UObject* WidgetType; UObject* OwningPlayer; UObject* ReturnValue; uint8_t pad[64]; } params{};
+            params.World = ctx;
+            params.WidgetType = cls;
+            ctx->ProcessEvent(cw, &params);
+            if (!params.ReturnValue) return;
+            m_banner = params.ReturnValue;
+
+            UFunction* atv = m_banner->GetFunctionByNameInChain(STR("AddToViewport"));
+            if (atv) { struct { int32 ZOrder; uint8_t pad[32]; } vp{}; vp.ZOrder = 100; m_banner->ProcessEvent(atv, &vp); }
+
+            UFunction* spv = m_banner->GetFunctionByNameInChain(STR("SetPositionInViewport"));
+            if (spv)
+            {
+                struct { double X; double Y; bool bRemoveDPIScale; uint8_t pad[32]; } pp{};
+                pp.X = 60.0; pp.Y = 40.0; pp.bRemoveDPIScale = false;
+                m_banner->ProcessEvent(spv, &pp);
+            }
+        }
+
+        m_banner_lines.push_back(text);
+        if (m_banner_lines.size() > 5) m_banner_lines.erase(m_banner_lines.begin());
+        std::wstring all;
+        for (const auto& l : m_banner_lines) { if (!all.empty()) all += STR("\n"); all += l; }
+
+        auto* mp = m_banner->GetPropertyByNameInChain(STR("Message"));
+        if (!mp) return;
+        UObject* tb = *mp->ContainerPtrToValuePtr<UObject*>(m_banner);
+        if (!tb) return;
+
+        static bool tb_styled = false;
+        if (!tb_styled)
+        {
+            tb_styled = true;
+
+            auto* drf = tb->GetPropertyByNameInChain(STR("DisableRefreshFont"));
+            if (drf) *drf->ContainerPtrToValuePtr<bool>(tb) = true;
+
+            auto* fp = tb->GetPropertyByNameInChain(STR("Font"));
+            if (fp)
+            {
+                void* fptr = fp->ContainerPtrToValuePtr<void>(tb);
+                auto* fs = static_cast<FStructProperty*>(fp)->GetStruct();
+                auto* sz = fs->GetPropertyByNameInChain(STR("Size"));
+                if (sz)
+                {
+                    int32* v = sz->ContainerPtrToValuePtr<int32>(fptr);
+                    *v = 14;
+                    UFunction* sf = tb->GetFunctionByNameInChain(STR("SetFont"));
+                    if (sf)
+                    {
+                        uint8_t buf[256] = {};
+                        memcpy(buf, fptr, fs->GetPropertiesSize());
+                        tb->ProcessEvent(sf, buf);
+                    }
+                    UFunction* sso = tb->GetFunctionByNameInChain(STR("SetShadowOffset"));
+                    if (sso)
+                    {
+                        struct { double X; double Y; uint8_t pad[32]; } so{};
+                        so.X = 2.0; so.Y = 2.0;
+                        tb->ProcessEvent(sso, &so);
+                    }
+                    UFunction* ssc = tb->GetFunctionByNameInChain(STR("SetShadowColorAndOpacity"));
+                    if (ssc)
+                    {
+                        struct { float R, G, B, A; uint8_t pad[32]; } sc{};
+                        sc.R = 0.0f; sc.G = 0.0f; sc.B = 0.0f; sc.A = 1.0f;
+                        tb->ProcessEvent(ssc, &sc);
+                    }
+                }
+            }
+        }
+
+        auto* lh = tb->GetPropertyByNameInChain(STR("LineHeightPercentage"));
+        if (lh) *lh->ContainerPtrToValuePtr<float>(tb) = 0.5f;
+
+        UFunction* st = tb->GetFunctionByNameInChain(STR("SetText"));
+        if (!st) return;
+        struct { FText InText; uint8_t pad[64]; } sp{};
+        sp.InText.SetString(FString(all.c_str()));
+        tb->ProcessEvent(st, &sp);
+        m_banner_ttl = 4;   // ~8 secondes
+    }
+
+    auto process_banner_file() -> void
+    {
+        FILE* f = _wfopen(ap_path(STR("ap_banner.txt")).c_str(), STR("r, ccs=UTF-8"));
+        if (!f) return;
+        std::vector<std::wstring> lines;
+        wchar_t line[256];
+        while (fgetws(line, 256, f))
+        {
+            std::wstring s = line;
+            while (!s.empty() && (s.back() == L'\n' || s.back() == L'\r')) s.pop_back();
+            lines.push_back(s);
+        }
+        fclose(f);
+
+        if ((int)lines.size() < m_banner_read) m_banner_read = 0;   // fichier vide par le client
+        for (size_t i = m_banner_read; i < lines.size(); i++)
+            if (!lines[i].empty()) show_banner(lines[i]);
+        m_banner_read = (int)lines.size();
+    }
+
     // ---- Boucle principale ----
     auto on_update() -> void override
     {
@@ -805,7 +969,17 @@ public:
                 m_v2_expect_label.clear();
             }
         }
+        if (m_banner_ttl > 0)
+        {
+            m_banner_ttl--;
+            if (m_banner_ttl == 0)
+            {
+                m_banner_lines.clear();
+                show_banner_clear();
+            }
+        }
         process_received_items();
+        process_banner_file();
         if (!m_hook_installed) install_chest_hook();
     }
 
