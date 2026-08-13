@@ -19,6 +19,17 @@ This mod adds full [Archipelago](https://archipelago.gg) multiworld randomizer s
 
 ## Installation
 
+### 0. How to install UE4SS
+
+UE4SS is the tool that lets mods like this one hook into the game. If you already have it installed, skip to step 1.
+
+1. Go to the [RE-UE4SS releases page](https://github.com/UE4SS-RE/RE-UE4SS/releases)
+2. Download the **latest stable (non-experimental) release**, the standard zip file (not the "zDEV" one — that's for developers only)
+3. Open the zip and extract everything into your game's `Win64` folder:
+   `<game folder>\Octopath_Traveler2\Octopath_Traveler2\Binaries\Win64\`
+4. Launch the game once. If it works, you'll briefly see a UE4SS console window appear — this confirms UE4SS is installed correctly
+5. You can now move on to installing the mod below
+
 ### 1. Install the mod (C++ / UE4SS)
 
 1. Copy the `OT2AP` folder into `<game folder>\Octopath_Traveler2\Binaries\Win64\Mods\`
