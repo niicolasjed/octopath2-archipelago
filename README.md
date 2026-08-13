@@ -27,9 +27,10 @@ UE4SS is the tool that lets mods like this one hook into the game. If you alread
 2. Download the **latest stable (non-experimental) release**, the standard zip file (not the "zDEV" one — that's for developers only)
 3. Open the zip and extract everything into your game's `Win64` folder:
    `<game folder>\Octopath_Traveler2\Octopath_Traveler2\Binaries\Win64\`
-4. Go in `<game folder>\Octopath_Traveler2\Octopath_Traveler2\Binaries\Win64\` and open UE4SS-settings.ini. Search for GuiConsoleEnabled and GuiConsoleVisible and turn them to 1
-5. Launch the game once. If it works, you'll briefly see a UE4SS console window appear — this confirms UE4SS is installed correctly
-6. You can now move on to installing the mod below
+4. Open `UE4SS-settings.ini` (in that same `Win64` folder) and under `[Debug]`, make sure `GraphicsAPI = dx11` (not `opengl` — opengl causes a blank white debug window)
+5. Open `UE4SS-settings.ini` (in that same `Win64` folder) and open UE4SS-settings.ini. Search for GuiConsoleEnabled and GuiConsoleVisible and turn them to 1
+6. Launch the game once. If it works, you'll briefly see a UE4SS console window appear — this confirms UE4SS is installed correctly
+7. You can now move on to installing the mod below
 
 ### 1. Install the mod (C++ / UE4SS)
 
